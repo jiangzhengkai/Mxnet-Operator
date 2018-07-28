@@ -19,7 +19,7 @@ namespace op {
 // These enums are only visible within this header
 namespace SoftmaxFocalLoss {
 enum SoftmaxFocalLossOpInputs {kData, kLabel};
-enum SoftmaxFocalLossOpOutputs {kOut, kProbability, kGradWeight};
+enum SoftmaxFocalLossOpOutputs {kOut, kWeight};
 enum SoftmaxFocalLossOpResource {kTempSpace};
 }  // SoftmaxFocalLoss
 
@@ -36,7 +36,7 @@ struct SoftmaxFocalLossParam : public dmlc::Parameter<SoftmaxFocalLossParam> {
     .describe("The instances whose `labels` == `ignore_label` will be ignored "
               "during backward, if `use_ignore` is set to ``true``).");
     DMLC_DECLARE_FIELD(num_classes).set_default(1)
-    .describe("number of classes (excluding background)");    
+    .describe("number of classes (including background)");    
     DMLC_DECLARE_FIELD(alpha).set_default(1.0f)
     .describe("Focal Loss's alpha hyper-parameter.");
     DMLC_DECLARE_FIELD(gamma).set_default(1.0f)
@@ -62,28 +62,13 @@ class SoftmaxFocalLossOp : public Operator {
     Stream<xpu> *s = ctx.get_stream<xpu>();
 
     Tensor<xpu, 3, DType> data = in_data[SoftmaxFocalLoss::kData].get<xpu, 3, DType>(s);
-    Tensor<xpu, 2, DType> label = in_data[SoftmaxFocalLoss::kLabel].get<xpu, 2, DType>(s);
-    Tensor<xpu, 2, DType> loss = out_data[SoftmaxFocalLoss::kOut].get<xpu, 2, DType>(s);
-    Tensor<xpu, 3, DType> prob = out_data[SoftmaxFocalLoss::kProbability].get<xpu, 3, DType>(s);
+    Tensor<xpu, 3, DType> prob = out_data[SoftmaxFocalLoss::kOut].get<xpu, 3, DType>(s);
+
 
     CHECK_EQ(data.CheckContiguous(), true);
-    CHECK_EQ(label.CheckContiguous(), true);
-    CHECK_EQ(loss.CheckContiguous(), true);
+    CHECK_EQ(prob.CheckContiguous(), true);
 
-    SoftmaxFocalLossForward(loss, prob, data, label, param_.num_classes, param_.ignore_label, param_.alpha, param_.gamma);
-
-    int num_pos_label = 0;
-    Tensor<cpu, 2, DType> workspace = ctx.requested[SoftmaxFocalLoss::kTempSpace].get_host_space_typed<2, DType>(label.shape_);
-    Copy(workspace, label, label.stream_);
-    for (index_t i = 0; i < workspace.size(0); ++i) {
-      for (index_t j = 0; j < workspace.size(1); ++j) {
-        if (static_cast<int>(workspace[i][j]) > 0) {
-            ++num_pos_label;
-        } 
-      }
-    }
-    num_pos_label = num_pos_label == 0 ? 1 : num_pos_label;
-    loss *= DType(1.0 / num_pos_label);
+    SoftmaxFocalLossForward(prob, data, param_.num_classes);
   }
 
   virtual void Backward(const OpContext &ctx,
@@ -99,18 +84,23 @@ class SoftmaxFocalLossOp : public Operator {
     Stream<xpu> *s = ctx.get_stream<xpu>();
     Tensor<xpu, 2, DType> label = in_data[SoftmaxFocalLoss::kLabel].get<xpu, 2, DType>(s);
     Tensor<xpu, 3, DType> in_data_grad = in_grad[SoftmaxFocalLoss::kData].get<xpu, 3, DType>(s);
-    Tensor<xpu, 3, DType> prob = out_data[SoftmaxFocalLoss::kProbability].get<xpu, 3, DType>(s);
-    Tensor<xpu, 2, DType> gradweights = out_data[SoftmaxFocalLoss::kGradWeight].get<xpu, 2, DType>(s);
+    Tensor<xpu, 3, DType> prob = out_data[SoftmaxFocalLoss::kOut].get<xpu, 3, DType>(s);
+ 
+  
     CHECK_EQ(label.CheckContiguous(), true);
     CHECK_EQ(in_data_grad.CheckContiguous(), true);
     CHECK_EQ(prob.CheckContiguous(), true);
+    const Resource& resource = ctx.requested[SoftmaxFocalLoss::kTempSpace];
+    ResourceSession rs(resource);
+    Tensor<xpu, 2, DType> workspace = ctx.requested[SoftmaxFocalLoss::kTempSpace].get_space_typed<xpu, 2, DType>(label.shape_, s);
+
 
     if (kAddTo == req[SoftmaxFocalLoss::kData] || kWriteTo == req[SoftmaxFocalLoss::kData]) {
       if (kWriteTo == req[SoftmaxFocalLoss::kData]) {
         in_data_grad = 0.0f;
       }
 
-      SoftmaxFocalLossBackward(gradweights, prob, in_data_grad, label, param_.num_classes, param_.ignore_label, param_.alpha, param_.gamma);
+      SoftmaxFocalLossBackward(workspace, prob, in_data_grad, label, param_.num_classes, param_.ignore_label, param_.alpha, param_.gamma);
 
       int num_pos_label = 0;
       Tensor<cpu, 2, DType> workspace = ctx.requested[SoftmaxFocalLoss::kTempSpace].get_host_space_typed<2, DType>(label.shape_);
@@ -148,10 +138,10 @@ class SoftmaxFocalLossProp : public OperatorProperty {
   }
 
   std::vector<std::string> ListOutputs() const override {
-    return {"loss", "probability", "gradweights"};
+    return {"prob"};
   }
   int NumOutputs() const override {
-          return 2;
+          return 1;
   }
       
   int NumVisibleOutputs() const override {
@@ -178,14 +168,12 @@ class SoftmaxFocalLossProp : public OperatorProperty {
 
     // label: [batch_size, spatial_dim]
     TShape lshape = in_shape->at(SoftmaxFocalLoss::kLabel);
-    CHECK_EQ(dshape.ndim(), 2U) << "label should be a 2D tensor";
+    CHECK_EQ(lshape.ndim(), 2U) << "label should be a 2D tensor";
 
     CHECK_EQ(dshape[0], lshape[0]) << "data  and label should be same in the first dim";
     CHECK_EQ(dshape[2], lshape[1]) << "data and label should be same in the last dim";
     out_shape->clear();
-    out_shape->push_back(lshape);
     out_shape->push_back(dshape);
-     out_shape->push_back(lshape);
     return true;
   }
 
@@ -206,8 +194,6 @@ class SoftmaxFocalLossProp : public OperatorProperty {
     }
     out_type->clear();
     out_type->push_back(dtype);
-    out_type->push_back(dtype);
-    out_type->push_back(dtype);
     return true;
   }
 
@@ -221,11 +207,6 @@ class SoftmaxFocalLossProp : public OperatorProperty {
     return "SoftmaxFocalLoss";
   }
 
-  virtual std::vector<ResourceRequest> ForwardResource(
-      const std::vector<TShape> &in_shape) const override {
-    return {ResourceRequest::kTempSpace};
-  }
-
   std::vector<ResourceRequest> BackwardResource(
       const std::vector<TShape> &in_shape) const override {
     return {ResourceRequest::kTempSpace};
@@ -236,7 +217,7 @@ class SoftmaxFocalLossProp : public OperatorProperty {
     const std::vector<int> &out_grad,
     const std::vector<int> &in_data,
     const std::vector<int> &out_data) const override {
-    return {in_data[SoftmaxFocalLoss::kData], in_data[SoftmaxFocalLoss::kLabel], out_data[SoftmaxFocalLoss::kProbability]};
+    return {in_data[SoftmaxFocalLoss::kData], in_data[SoftmaxFocalLoss::kLabel], out_data[SoftmaxFocalLoss::kOut]};
   }
 
   Operator* CreateOperator(Context ctx) const override {

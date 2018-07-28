@@ -2,18 +2,13 @@
 
 namespace mshadow {
 template<typename Dtype>
-inline void SoftmaxFocalLossForward(const Tensor<cpu, 2, Dtype> &out_data,
-                                    const Tensor<cpu, 3, Dtype> &prob,
+inline void SoftmaxFocalLossForward(const Tensor<cpu, 3, Dtype> &prob,
                                     const Tensor<cpu, 3, Dtype> &in_data,
-                                    const Tensor<cpu, 2, Dtype> &in_label,
-                                    const int num_classes,
-                                    const float ignore_label,
-                                    const float alpha,
-                                    const float gamma) {
+                                    const int num_classes) {
   return;
 }
 template<typename Dtype>
-inline void SoftmaxFocalLossBackward(const Tensor<cpu, 2, Dtype> &weight,
+inline void SoftmaxFocalLossBackward(const Tensor<cpu, 2, Dtype> &weights,
                                      const Tensor<cpu, 3, Dtype> &prob,
                                      const Tensor<cpu, 3, Dtype> &in_data_grad,
                                      const Tensor<cpu, 2, Dtype> &in_label,
