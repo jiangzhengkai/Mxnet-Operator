@@ -1,3 +1,6 @@
+/*
+author zhengkai.jiang
+*/
 #ifndef MXNET_OPERATOR_SOFTMAX_FOCAL_LOSS_INL_H_
 #define MXNET_OPERATOR_SOFTMAX_FOCAL_LOSS_INL_H_
 
@@ -11,7 +14,6 @@
 #include "./mshadow_op.h"
 #include "./operator_common.h"
 
-
 namespace mxnet {
 namespace op {
 
@@ -19,7 +21,7 @@ namespace op {
 // These enums are only visible within this header
 namespace SoftmaxFocalLoss {
 enum SoftmaxFocalLossOpInputs {kData, kLabel};
-enum SoftmaxFocalLossOpOutputs {kOut, kWeight};
+enum SoftmaxFocalLossOpOutputs {kOut};
 enum SoftmaxFocalLossOpResource {kTempSpace};
 }  // SoftmaxFocalLoss
 
@@ -63,12 +65,14 @@ class SoftmaxFocalLossOp : public Operator {
 
     Tensor<xpu, 3, DType> data = in_data[SoftmaxFocalLoss::kData].get<xpu, 3, DType>(s);
     Tensor<xpu, 3, DType> prob = out_data[SoftmaxFocalLoss::kOut].get<xpu, 3, DType>(s);
+    Tensor<xpu, 2, DType> label = in_data[SoftmaxFocalLoss::kLabel].get<xpu, 2, DType>(s);
 
 
     CHECK_EQ(data.CheckContiguous(), true);
     CHECK_EQ(prob.CheckContiguous(), true);
+    CHECK_EQ(label.CheckContiguous(), true);
 
-    SoftmaxFocalLossForward(prob, data, param_.num_classes);
+    SoftmaxFocalLossForward(prob, data, label, param_.num_classes);
   }
 
   virtual void Backward(const OpContext &ctx,

@@ -51,12 +51,13 @@ __global__ void SpatialSoftmaxKernel(
 template<typename Dtype>
 inline void SoftmaxFocalLossForward(const Tensor<gpu, 3, Dtype> &prob,
                                     const Tensor<gpu, 3, Dtype> &in_data,
+                                    const Tensor<gpu, 2, Dtype> &label,
                                     const int num_classes) {
   const Dtype* bottom_data = in_data.dptr_;
   Dtype* top_prob = prob.dptr_;
  
   
-  const int count = in_data.shape_.Size();
+  const int count = label.shape_.Size();
   const int spatial_dim = in_data.size(2);
   
   const int gridSize = (count + kMaxThreadsPerBlock - 1) / kMaxThreadsPerBlock;
@@ -64,7 +65,6 @@ inline void SoftmaxFocalLossForward(const Tensor<gpu, 3, Dtype> &prob,
   dim3 dimBlock(kMaxThreadsPerBlock);
   CheckLaunchParam(dimGrid, dimBlock, "SoftmaxFocalLoss Forward");
   
-
   cudaStream_t stream = Stream<gpu>::GetStream(prob.stream_);
   SpatialSoftmaxKernel<Dtype><<<dimGrid, dimBlock, 0, stream>>>(
     bottom_data, top_prob, count, spatial_dim, num_classes);
@@ -167,9 +167,10 @@ inline void SoftmaxFocalLossBackward(const Tensor<gpu, 2, Dtype> &weights,
 
 template<typename Dtype>
 inline void SoftmaxFocalLossForward(const Tensor<gpu, 3, Dtype> &prob,
-                                    const Tensor<gpu, 3, Dtype> &in_data,
+                                    const Tensor<gpu, 3, Dtype> &data,
+                                    const Tensor<gpu, 2, Dtype> &label,
                                     const int num_classes) {
-  cuda::SoftmaxFocalLossForward(prob, in_data, num_classes);
+  cuda::SoftmaxFocalLossForward(prob, data, label, num_classes);
 }
 
 template<typename Dtype>
