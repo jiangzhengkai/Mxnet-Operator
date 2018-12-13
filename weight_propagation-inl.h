@@ -111,6 +111,8 @@ class WeightPropagationOp : public Operator {
     CHECK_EQ(data.CheckContiguous(), true);
     CHECK_EQ(grad_data.CheckContiguous(), true);
     CHECK_EQ(grad_weights.CheckContiguous(), true);
+    grad_data = 0;
+    grad_weights = 0;
 
     WeightPropagationBackwardAcc(grad_data, grad_weights, grad_out, data, weights, param_.weight_width, param_.weight_height, param_.hole);
   }
