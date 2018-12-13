@@ -39,7 +39,7 @@ __global__ void WeightPropagationForwardKernel(const int count, int N, int C, in
         for(int j=0; j< weight_width_; j++) {
             p_h = hole_ * (i - weight_height_/2) + h;
             p_w = hole_ * (j - weight_width_/2) + w;
-            if(p_h >= 0 && p_w >= 0 && p_h <= H && p_w <= W) {
+            if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
                 p_weight = i * weight_width_ + j;
                 top_data[index] += bottom_data[offset(n,c,p_h,p_w,N,C,H,W)] * bottom_weights[offset(n,p_weight,h,w,N,size_weights,H,W)];
             }
@@ -90,7 +90,7 @@ __global__ void WeightPropagationDataBackwardAccKernel(const int count, int N, i
             p_h = hole_ * (i - weight_height_/2) + h;
             p_w = hole_ * (j - weight_width_/2) + w;
 
-            if(p_h >= 0 && p_w >= 0 && p_h <= H && p_w <= W) {
+            if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
 
                 p_weight = i * weight_width_ + j;
 
@@ -119,7 +119,7 @@ __global__ void WeightPropagationWeightsBackwardAccKernel(const int count, int N
             p_h = hole_ * (i - weight_height_/2) + h;
             p_w = hole_ * (j - weight_width_/2) + w;
 
-            if(p_h >= 0 && p_w >= 0 && p_h <= H && p_w <= W) {
+            if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
 
                 p_weight = i * weight_width_ + j;
 
