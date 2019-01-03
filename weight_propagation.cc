@@ -67,10 +67,10 @@ Operator *WeightPropagationProp::CreateOperatorEx(Context ctx, std::vector<TShap
 
 DMLC_REGISTER_PARAMETER(WeightPropagationParam);
 
-MXNET_REGISTER_OP_PROPERTY(WeightPropagation, WeightPropagationProp)
+MXNET_REGISTER_OP_PROPERTY(_contrib_WeightPropagation, WeightPropagationProp)
 .describe("weightpropagation to propagation weights with feature")
 .add_argument("data", "Symbol", "Input data to the pooling operator, a 4D Feature maps")
-.add_argument("weights", "Symbol", "Bounding box coordinates, a 4D array of ")
+.add_argument("weights", "Symbol", "Position sensitive weights, a 4D array ")
 .add_arguments(WeightPropagationParam::__FIELDS__());
 
 } //namespace op

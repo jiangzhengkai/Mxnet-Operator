@@ -1,6 +1,6 @@
 /*!
  * Copyright (c) 2015 by Contributors
- * \file position sensetive pooling_align-inl.h
+ * \file weight propagtion weight_propagation-inl.h
  * \brief
  * \author ZhengKai Jiang
 */
@@ -13,14 +13,10 @@
 #include "../mxnet_op.h"
 
 
-#define CUDA_KERNEL_LOOP(i, n) \
-for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
-      i < (n); \
-      i += blockDim.x * gridDim.x)
-
 namespace mshadow {
 namespace cuda {
-__device__ int offset(int n, int c, int h, int w, int N, int C, int H, int W) {
+    
+inline __device__ int offset(int n, int c, int h, int w, int N, int C, int H, int W) {
     return n*C*H*W + c*H*W + h*W + w;
 }
 
@@ -28,21 +24,23 @@ template<typename DType>
 __global__ void WeightPropagationForwardKernel(const int count, int N, int C, int size_weights, int H,
                 int W, int weight_height_, int weight_width_, int hole_, 
                 const DType* bottom_data, const DType* bottom_weights, DType* top_data ) {
-  CUDA_KERNEL_LOOP(index, count) {
-      const int w = index % W;
-      const int h = (index / W) % H;
-      const int c = (index / (H * W)) % C;
-      const int n = (index / (C * H * W));
+  for(int index = (blockIdx.x + blockIdx.y * gridDim.x) * blockDim.x + threadIdx.x;
+      index < count;
+      index += blockDim.x * gridDim.x * gridDim.y) {
+    const int w = index % W;
+    const int h = (index / W) % H;
+    const int c = (index / (H * W)) % C;
+    const int n = (index / (C * H * W));
 
-      int p_h = 0,p_w = 0,p_weight = 0;
-      for(int i =0; i < weight_height_; i++) {
-        for(int j=0; j< weight_width_; j++) {
-            p_h = hole_ * (i - weight_height_/2) + h;
-            p_w = hole_ * (j - weight_width_/2) + w;
-            if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
-                p_weight = i * weight_width_ + j;
-                top_data[index] += bottom_data[offset(n,c,p_h,p_w,N,C,H,W)] * bottom_weights[offset(n,p_weight,h,w,N,size_weights,H,W)];
-            }
+    int p_h = 0,p_w = 0,p_weight = 0;
+    for(int i =0; i < weight_height_; i++) {
+      for(int j=0; j< weight_width_; j++) {
+        p_h = hole_ * (i - weight_height_/2) + h;
+        p_w = hole_ * (j - weight_width_/2) + w;
+        if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
+          p_weight = i * weight_width_ + j;
+          top_data[index] += bottom_data[offset(n,c,p_h,p_w,N,C,H,W)] * bottom_weights[offset(n,p_weight,h,w,N,size_weights,H,W)];
+          }
         }
       }
   } // cuda_kernel_loop
@@ -51,11 +49,11 @@ __global__ void WeightPropagationForwardKernel(const int count, int N, int C, in
 
 template<typename DType>
 inline void WeightPropagationForward(const Tensor<gpu, 4, DType> &out,
-                                    const Tensor<gpu, 4, DType> &data,
-                                    const Tensor<gpu, 4, DType> &weights,
-                                    const int weight_height_,
-                                    const int weight_width_,
-                                    const int hole_) {
+                                     const Tensor<gpu, 4, DType> &data,
+                                     const Tensor<gpu, 4, DType> &weights,
+                                     const int weight_height_,
+                                     const int weight_width_,
+                                     const int hole_) {
   const DType *bottom_data = data.dptr_;
   const DType *bottom_weights = weights.dptr_;
   DType *top_data = out.dptr_;
@@ -79,24 +77,25 @@ template<typename DType>
 __global__ void WeightPropagationDataBackwardAccKernel(const int count, int N, int C, int size_weights, int H, int W, int weight_height_,
                                                    int weight_width_, int hole_, const DType* grad_out, const DType* bottom_data, 
                                                    const DType* bottom_weights, DType* grad_data, DType* grad_weights) {
-  CUDA_KERNEL_LOOP(index, count) {
-      const int w = index % W;
-      const int h = (index / W) % H;
-      const int c = (index / (H * W)) % C;
-      const int n = (index / (C * H * W));
-      int p_h = 0,p_w = 0, p_weight = 0;
-      for(int i = 0; i < weight_height_; ++i) {
-        for(int j = 0; j < weight_width_; ++j) {
-            p_h = hole_ * (i - weight_height_/2) + h;
-            p_w = hole_ * (j - weight_width_/2) + w;
+  for(int index = (blockIdx.x + blockIdx.y * gridDim.x) * blockDim.x + threadIdx.x;
+       index < count;
+       index += blockDim.x * gridDim.x * gridDim.y) {
+    const int w = index % W;
+    const int h = (index / W) % H;
+    const int c = (index / (H * W)) % C;
+    const int n = (index / (C * H * W));
+    int p_h = 0,p_w = 0, p_weight = 0;
+    for(int i = 0; i < weight_height_; ++i) {
+      for(int j = 0; j < weight_width_; ++j) {
+        p_h = hole_ * (i - weight_height_/2) + h;
+        p_w = hole_ * (j - weight_width_/2) + w;
 
-            if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
+        if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
 
-                p_weight = i * weight_width_ + j;
+          p_weight = i * weight_width_ + j;
 
-
-                atomicAdd(grad_data+offset(n,c,p_h,p_w,N,C,H,W),grad_out[index]*bottom_weights[offset(n,p_weight,h,w,N,size_weights,H,W)]);
-            }
+          atomicAdd(grad_data+offset(n,c,p_h,p_w,N,C,H,W),grad_out[index]*bottom_weights[offset(n,p_weight,h,w,N,size_weights,H,W)]);
+          }
         }
       }
   }
@@ -108,23 +107,25 @@ template<typename DType>
 __global__ void WeightPropagationWeightsBackwardAccKernel(const int count, int N, int C, int size_weights, int H, int W, int weight_height_,
                                                    int weight_width_, int hole_, const DType* grad_out, const DType* bottom_data, 
                                                    const DType* bottom_weights, DType* grad_data, DType* grad_weights) {
-  CUDA_KERNEL_LOOP(index, count) {
-      const int w = index % W;
-      const int h = (index / W) % H;
-      const int c = (index / (H * W)) % C;
-      const int n = (index / (C * H * W));
-      int p_h = 0,p_w = 0, p_weight = 0;
-      for(int i = 0; i < weight_height_; ++i) {
-        for(int j = 0; j < weight_width_; ++j) {
-            p_h = hole_ * (i - weight_height_/2) + h;
-            p_w = hole_ * (j - weight_width_/2) + w;
+  for(int index = (blockIdx.x + blockIdx.y * gridDim.x) * blockDim.x + threadIdx.x;
+       index < count;
+       index += blockDim.x * gridDim.x * gridDim.y) {
+    const int w = index % W;
+    const int h = (index / W) % H;
+    const int c = (index / (H * W)) % C;
+    const int n = (index / (C * H * W));
+    int p_h = 0,p_w = 0, p_weight = 0;
+    for(int i = 0; i < weight_height_; ++i) {
+      for(int j = 0; j < weight_width_; ++j) {
+        p_h = hole_ * (i - weight_height_/2) + h;
+        p_w = hole_ * (j - weight_width_/2) + w;
 
-            if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
+        if(p_h >= 0 && p_w >= 0 && p_h < H && p_w < W) {
 
-                p_weight = i * weight_width_ + j;
+          p_weight = i * weight_width_ + j;
 
-                atomicAdd(grad_weights+offset(n,p_weight,h,w,N,size_weights,H,W),grad_out[index]*bottom_data[offset(n,c,p_h,p_w,N,C,H,W)]);
-            }
+          atomicAdd(grad_weights+offset(n,p_weight,h,w,N,size_weights,H,W),grad_out[index]*bottom_data[offset(n,c,p_h,p_w,N,C,H,W)]);
+          }
         }
       }
   }
@@ -134,13 +135,13 @@ __global__ void WeightPropagationWeightsBackwardAccKernel(const int count, int N
 
 template<typename DType>
 inline void WeightPropagationBackwardAcc(const Tensor<gpu, 4, DType> &grad_data,
-                                        const Tensor<gpu, 4, DType> &grad_weights,
-                                        const Tensor<gpu, 4, DType> &grad_out,
-                                        const Tensor<gpu, 4, DType> &data,
-                                        const Tensor<gpu, 4, DType> &weights,
-                                        const int weight_height_,
-                                        const int weight_width_,
-                                        const int hole_) {
+                                         const Tensor<gpu, 4, DType> &grad_weights,
+                                         const Tensor<gpu, 4, DType> &grad_out,
+                                         const Tensor<gpu, 4, DType> &data,
+                                         const Tensor<gpu, 4, DType> &weights,
+                                         const int weight_height_,
+                                         const int weight_width_,
+                                         const int hole_) {
   const DType *top_grad = grad_out.dptr_;
   const DType *bottom_data = data.dptr_;
   const DType *bottom_weights = weights.dptr_;
@@ -171,23 +172,23 @@ inline void WeightPropagationBackwardAcc(const Tensor<gpu, 4, DType> &grad_data,
 } // namespace cuda
 template<typename DType>
 inline void WeightPropagationForward(const Tensor<gpu, 4, DType> &out,
-                                    const Tensor<gpu, 4, DType> &data,
-                                    const Tensor<gpu, 4, DType> &weights,
-                                    const int weight_height_,
-                                    const int weight_width_,
-                                    const int hole_) {
+                                     const Tensor<gpu, 4, DType> &data,
+                                     const Tensor<gpu, 4, DType> &weights,
+                                     const int weight_height_,
+                                     const int weight_width_,
+                                     const int hole_) {
   cuda::WeightPropagationForward(out, data, weights, weight_height_, weight_width_, hole_);
 }
 
 template<typename DType>
 inline void WeightPropagationBackwardAcc(const Tensor<gpu, 4, DType> &grad_data,
-                                        const Tensor<gpu, 4, DType> &grad_weights,
-                                        const Tensor<gpu, 4, DType> &grad_out,
-                                        const Tensor<gpu, 4, DType> &data,
-                                        const Tensor<gpu, 4, DType> &weights,
-                                        const int weight_height_,
-                                        const int weight_width_,
-                                        const int hole_) {
+                                         const Tensor<gpu, 4, DType> &grad_weights,
+                                         const Tensor<gpu, 4, DType> &grad_out,
+                                         const Tensor<gpu, 4, DType> &data,
+                                         const Tensor<gpu, 4, DType> &weights,
+                                         const int weight_height_,
+                                         const int weight_width_,
+                                         const int hole_) {
   cuda::WeightPropagationBackwardAcc(grad_data, grad_weights, grad_out, data, weights, weight_height_, weight_width_, hole_);
 }
 

@@ -61,8 +61,8 @@ class WeightPropagationOp : public Operator {
     size_t expected_out = 1;
     CHECK_EQ(in_data.size(), expected_in);
     CHECK_EQ(out_data.size(), expected_out);
-    CHECK_EQ(in_data[weightpropagation::kData].shape_[2], out_data[weightpropagation::kWeights].shape_[2]);
-    CHECK_EQ(in_data[weightpropagation::kData].shape_[3], out_data[weightpropagation::kWeights].shape_[3]);
+    CHECK_EQ(in_data[weightpropagation::kData].shape_[2], in_data[weightpropagation::kWeights].shape_[2]);
+    CHECK_EQ(in_data[weightpropagation::kData].shape_[3], in_data[weightpropagation::kWeights].shape_[3]);
     CHECK_EQ(in_data[weightpropagation::kData].shape_, out_data[weightpropagation::kOut].shape_);
     Stream<xpu> *s = ctx.get_stream<xpu>();
 
@@ -75,9 +75,7 @@ class WeightPropagationOp : public Operator {
     CHECK_EQ(out.CheckContiguous(), true);
 
     out = 0.0;
-
     WeightPropagationForward(out, data, weights, param_.weight_height, param_.weight_width, param_.hole);
-
   }
   // backward
   virtual void Backward(const OpContext &ctx,
@@ -113,13 +111,12 @@ class WeightPropagationOp : public Operator {
     CHECK_EQ(grad_weights.CheckContiguous(), true);
     grad_data = 0.0;
     grad_weights = 0.0;
-
     WeightPropagationBackwardAcc(grad_data, grad_weights, grad_out, data, weights, param_.weight_width, param_.weight_height, param_.hole);
   }
 
  private:
     WeightPropagationParam param_;
-}; // class weightpropagationop
+}; // class weight propagation op
 
 
 // Decalre Factory function, used for dispatch specialization
@@ -161,7 +158,7 @@ class WeightPropagationProp : public OperatorProperty {
 
     // weights [batch_size, k*k, h, w]
     TShape wshape = in_shape->at(weightpropagation::kWeights);
-    CHECK_EQ(wshape.ndim(), 4) << "bbox should be a 4D tensor of shape [batch, k*k, h, w]";
+    CHECK_EQ(wshape.ndim(), 4) << "weight should be a 4D tensor of shape [batch, k*k, h, w]";
 
     // out: [batch_size, c, h , w]
     out_shape->clear();
