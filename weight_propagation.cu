@@ -1,6 +1,6 @@
 /*!
  * Copyright (c) 2015 by Contributors
- * \file weight propagtion weight_propagation-inl.h
+ * \file weight propagation weight_propagation-inl.h
  * \brief
  * \author ZhengKai Jiang
 */
